@@ -233,10 +233,10 @@
         let videoEnabled = true;
         let currentCallType = null; 
 
-        // Секретный префикс для предотвращения глобальных конфликтов ID на сервере PeerJS
+        // Секретный префикс
         const APP_PREFIX = 'chipmunk-msg-'; 
         
-        // Генерация 6-значного номера для пользователя
+        // Генерация 6-значного номера
         const generateShortId = () => Math.floor(100000 + Math.random() * 900000).toString();
         let myCustomId = generateShortId();
 
@@ -283,10 +283,9 @@
                 peer.destroy();
             }
 
-            // Инициализируем PeerJS с длинным секретным ID для защиты от коллизий
             peer = new Peer(APP_PREFIX + myCustomId, {
                 debug: 2,
-                pingInterval: 5000, // Очень важно для стабильной связи на телефонах
+                pingInterval: 10000, // Снижаем агрессивность пинга для стабильности
                 config: {'iceServers': [
                     { urls: 'stun:stun.l.google.com:19302' },
                     { urls: 'stun:stun.cloudflare.com:3478' },
@@ -295,19 +294,16 @@
             });
 
             peer.on('open', (id) => {
-                // Пользователю показываем только 6 цифр
                 document.getElementById('my-id').value = myCustomId;
                 setStatus('В сети', 'text-green-500', true);
                 if (reconnectTimeout) clearTimeout(reconnectTimeout);
             });
 
-            // ЗАЩИТА ОТ СПАМА И БЛОКИРОВОК
             peer.on('disconnected', () => {
-                setStatus('Сбой сети, восстанавливаем...', 'text-yellow-500', true);
+                setStatus('Связь потеряна. Ожидание...', 'text-yellow-500', true);
                 if (!peer.destroyed) {
                     if (reconnectTimeout) clearTimeout(reconnectTimeout);
                     reconnectTimeout = setTimeout(() => {
-                        console.log("Попытка переподключения...");
                         peer.reconnect();
                     }, 3000);
                 }
@@ -341,26 +337,41 @@
 
             peer.on('error', (err) => {
                 console.error("PeerJS Ошибка:", err);
+                
+                // Всегда разблокируем кнопку подключения при любой ошибке
+                const btn = document.getElementById('btn-connect');
+                if (btn) {
+                    btn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Создать чат';
+                    btn.disabled = false;
+                }
+
                 if (err.type === 'peer-unavailable') {
-                    showToast('Код не найден. Проверьте правильность.', 'error');
-                    document.getElementById('btn-connect').innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Создать чат';
-                    document.getElementById('btn-connect').disabled = false;
+                    showToast('Собеседник не в сети (возможно, свернул браузер)', 'error');
                 } else if (err.type === 'unavailable-id') {
-                    // Если даже длинный ID занят
                     myCustomId = generateShortId();
                     initApp(); 
                 } else if (err.type === 'network' || err.type === 'disconnected' || err.type === 'server-error') {
-                    setStatus('Жесткий сбой. Перезапуск...', 'text-red-400');
-                    // Если сервер жестко отбросил, пересоздаем соединение полностью
+                    setStatus('Сбой сети. Обновление...', 'text-red-400');
                     if (reconnectTimeout) clearTimeout(reconnectTimeout);
                     reconnectTimeout = setTimeout(() => {
                         initApp();
-                    }, 5000);
+                    }, 4000);
                 } else {
-                    setStatus('Ошибка сервера', 'text-red-500');
+                    setStatus('Ошибка: ' + err.type, 'text-red-500');
                 }
             });
         }
+
+        // --- ВОССТАНОВЛЕНИЕ ПРИ ВОЗВРАТЕ В БРАУЗЕР ---
+        // Когда пользователь сворачивает и разворачивает браузер (Telegram, WhatsApp)
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === 'visible') {
+                if (peer && peer.disconnected && !peer.destroyed) {
+                    setStatus('Возврат в браузер, переподключение...', 'text-yellow-500', true);
+                    peer.reconnect();
+                }
+            }
+        });
 
         // --- ЛОГИКА ТЕКСТОВОГО ЧАТА ---
         function connectToPeer() {
@@ -374,11 +385,17 @@
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Подключение...';
             btn.disabled = true;
 
-            // Добавляем секретный префикс при подключении к другу
-            const conn = peer.connect(APP_PREFIX + targetId, { reliable: true });
+            // Убрал reliable: true, так как он часто вызывает зависание на плохом интернете
+            const conn = peer.connect(APP_PREFIX + targetId);
             
             conn.on('open', () => {
                 setupChatConnection(conn);
+            });
+
+            conn.on('error', (err) => {
+                showToast('Сбой соединения', 'error');
+                btn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Создать чат';
+                btn.disabled = false;
             });
         }
 
@@ -397,7 +414,6 @@
             setStatus('Чат активен', 'text-chipmunk-light');
             switchScreen('chat');
             
-            // Убираем префикс для отображения пользователю
             const cleanPeerId = conn.peer.replace(APP_PREFIX, '');
             
             ui.chatHistory.innerHTML = `
@@ -457,8 +473,11 @@
             dataConnection = null;
             
             document.getElementById('target-id').value = '';
-            document.getElementById('btn-connect').innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Создать чат';
-            document.getElementById('btn-connect').disabled = false;
+            const btn = document.getElementById('btn-connect');
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Создать чат';
+                btn.disabled = false;
+            }
             
             setStatus('В сети', 'text-green-500', true);
             switchScreen('connect');
@@ -495,7 +514,6 @@
             
             document.getElementById('audio-only-remote').classList.toggle('hidden', !isAudio);
             
-            // Если видео - удаляем скрывающий класс
             if (!isAudio) {
                 document.getElementById('remote-video').classList.remove('hidden');
             } else {
@@ -511,7 +529,7 @@
 
         async function startCall(type) {
             if (!dataConnection) return;
-            const targetId = dataConnection.peer; // targetId уже содержит APP_PREFIX
+            const targetId = dataConnection.peer; 
             currentCallType = type;
 
             const hasMedia = await getMediaAccess(type);
@@ -551,15 +569,12 @@
         function setupMediaConnection(call) {
             mediaConnection = call;
             
-            // Надежная обработка видеопотока для компьютера и смартфона
             call.on('stream', (remoteStream) => {
                 const videoEl = document.getElementById('remote-video');
                 
-                // Предотвращаем двойной запуск события
                 if (videoEl.srcObject !== remoteStream) {
                     videoEl.srcObject = remoteStream;
                     
-                    // Гарантированный старт после загрузки метаданных
                     videoEl.onloadedmetadata = () => {
                         videoEl.play().catch(e => console.log("Ошибка автовоспроизведения:", e));
                         document.getElementById('remote-video-loader').classList.add('hidden');
@@ -585,7 +600,7 @@
             mediaConnection = null;
             const videoEl = document.getElementById('remote-video');
             videoEl.srcObject = null;
-            videoEl.classList.add('hidden'); // прячем окно
+            videoEl.classList.add('hidden');
             
             ui.videoOverlay.classList.add('hidden');
             
@@ -597,7 +612,6 @@
             currentCallType = null;
         }
 
-        // --- УПРАВЛЕНИЕ МЕДИА ---
         function updateMediaButtons() {
             const btnMic = document.getElementById('btn-mic');
             btnMic.className = `flex-1 p-3 rounded-xl text-white transition ${micEnabled ? 'bg-stone-800 hover:bg-stone-700' : 'bg-red-500 hover:bg-red-600'}`;
@@ -647,7 +661,6 @@
             }
         });
 
-        // ЗАПУСК
         window.onload = initApp;
 
     </script>
