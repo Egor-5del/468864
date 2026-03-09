@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Chipmunk Messenger</title>
+    <!-- Подключаем стили Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Подключаем PeerJS для P2P связи (текст + видео) -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- Подключаем иконки FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        // Настраиваем цвета в стиле Бурундука (оранжево-коричневые акценты)
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        chipmunk: {
+                            light: '#f97316', // Оранжевый
+                            DEFAULT: '#ea580c', // Темно-оранжевый
+                            dark: '#9a3412', // Коричневый
+                            bg: '#1c1917', // Темный фон (stone-900)
+                            panel: '#292524' // Светлее фона (stone-800)
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Отзеркаливаем свою камеру */
+        #local-video { transform: scaleX(-1); }
+        /* Плавная прокрутка для чата */
+        #chat-history { scroll-behavior: smooth; }
+        /* Скрываем скроллбар для красоты */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #ea580c; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-chipmunk-bg text-gray-100 font-sans h-screen flex flex-col overflow-hidden selection:bg-chipmunk-light selection:text-white">
+
+    <!-- Всплывающее уведомление (Toast) -->
+    <div id="toast" class="fixed top-4 left-1/2 transform -translate-x-1/2 bg-chipmunk-dark text-white px-6 py-3 rounded-full shadow-2xl z-50 transition-all duration-300 opacity-0 translate-y-[-20px] pointer-events-none flex items-center">
+        <i id="toast-icon" class="fas fa-info-circle mr-2"></i>
+        <span id="toast-msg" class="font-medium"></span>
+    </div>
+
+    <!-- Верхняя панель (Header) -->
+    <header class="bg-chipmunk-panel border-b border-stone-700 p-4 shadow-md flex justify-between items-center z-20">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 bg-chipmunk rounded-xl flex items-center justify-center text-xl shadow-lg shadow-chipmunk/20">
+                🐿️
+            </div>
+            <div>
+                <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-orange-400 to-chipmunk">Chipmunk</h1>
+                <p id="connection-status" class="text-xs text-stone-400 flex items-center">
+                    <span class="w-2 h-2 rounded-full bg-yellow-500 mr-1 animate-pulse"></span> Подключение к серверу...
+                </p>
+            </div>
+        </div>
+        
+        <!-- Кнопки в шапке (появятся при чате) -->
+        <div id="header-actions" class="hidden flex space-x-2">
+            <button onclick="startVideoCall()" class="bg-stone-700 hover:bg-stone-600 text-white p-2 sm:px-4 sm:py-2 rounded-lg transition flex items-center shadow-md">
+                <i class="fas fa-video sm:mr-2 text-chipmunk-light"></i> <span class="hidden sm:inline">Видеозвонок</span>
+            </button>
+            <button onclick="disconnectChat()" class="bg-red-500/20 hover:bg-red-500/40 text-red-400 p-2 sm:px-4 sm:py-2 rounded-lg transition flex items-center">
+                <i class="fas fa-sign-out-alt"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Основной контейнер -->
+    <main class="flex-1 relative flex">
+        
+        <!-- ЭКРАН 1: Подключение (Лобби) -->
+        <div id="screen-connect" class="absolute inset-0 flex flex-col items-center justify-center p-4 z-10 overflow-y-auto">
+            <div class="w-full max-w-md space-y-6">
+                
+                <!-- Карточка моего ID -->
+                <div class="bg-chipmunk-panel border border-stone-700 rounded-2xl p-6 shadow-xl">
+                    <h2 class="text-lg font-semibold mb-2 text-stone-300 flex items-center">
+                        <i class="fas fa-id-badge mr-2 text-chipmunk"></i> Мой ID
+                    </h2>
+                    <div class="flex items-center space-x-2 relative">
+                        <input type="text" id="my-id" readonly value="Генерация..." class="flex-1 bg-stone-900 border border-stone-600 rounded-xl px-4 py-3 text-stone-100 outline-none font-mono text-sm w-full">
+                        <button onclick="copyId()" class="absolute right-2 top-1/2 transform -translate-y-1/2 bg-chipmunk hover:bg-chipmunk-light text-white p-2 rounded-lg transition flex items-center justify-center w-10 h-10 shadow-md">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    <p class="text-xs text-stone-500 mt-3 text-center">Отправьте этот ID другу, чтобы он мог вам написать.</p>
+                </div>
+
+                <!-- Карточка подключения к другу -->
+                <div class="bg-chipmunk-panel border border-stone-700 rounded-2xl p-6 shadow-xl">
+                    <h2 class="text-lg font-semibold mb-2 text-stone-300 flex items-center">
+                        <i class="fas fa-user-plus mr-2 text-chipmunk"></i> Написать другу
+                    </h2>
+                    <div class="flex flex-col space-y-3">
+                        <input type="text" id="target-id" placeholder="Вставьте ID друга..." class="w-full bg-stone-900 border border-stone-600 focus:border-chipmunk rounded-xl px-4 py-3 text-stone-100 outline-none transition font-mono text-sm">
+                        <button id="btn-connect" onclick="connectToPeer()" class="w-full bg-chipmunk hover:bg-chipmunk-light text-white font-bold py-3 rounded-xl transition flex justify-center items-center shadow-lg shadow-chipmunk/30">
+                            <i class="fas fa-paper-plane mr-2"></i> Создать чат
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ЭКРАН 2: Мессенджер (Чат) -->
+        <div id="screen-chat" class="hidden absolute inset-0 flex flex-col z-10 bg-chipmunk-bg">
+            
+            <!-- Область сообщений -->
+            <div id="chat-history" class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- Системное сообщение -->
+                <div class="flex justify-center my-4">
+                    <span class="bg-stone-800 text-stone-400 text-xs px-3 py-1 rounded-full border border-stone-700 shadow-sm">
+                        Чат защищен шифрованием P2P 🔒
+                    </span>
+                </div>
+                <!-- Сообщения будут добавляться сюда через JS -->
+            </div>
+
+            <!-- Зона ввода текста -->
+            <div class="bg-chipmunk-panel border-t border-stone-700 p-3 sm:p-4">
+                <form id="chat-form" onsubmit="sendMessage(event)" class="flex items-end space-x-2 max-w-4xl mx-auto">
+                    <textarea id="chat-input" rows="1" placeholder="Напишите сообщение..." class="flex-1 bg-stone-900 border border-stone-600 focus:border-chipmunk rounded-xl px-4 py-3 text-stone-100 outline-none transition resize-none max-h-32 min-h-[48px]"></textarea>
+                    <button type="submit" class="bg-chipmunk hover:bg-chipmunk-light text-white rounded-xl transition flex items-center justify-center w-12 h-12 shadow-md flex-shrink-0">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- ПАНЕЛЬ ВИДЕО (Поверх чата) -->
+        <div id="video-overlay" class="hidden absolute top-0 left-0 right-0 p-4 z-30 pointer-events-none flex justify-end">
+            <!-- Контейнер видеозвонка (можно таскать/изменять) -->
+            <div class="pointer-events-auto bg-stone-900 border border-stone-700 p-2 rounded-2xl shadow-2xl flex flex-col w-48 sm:w-64 transition-all" id="video-container">
+                
+                <!-- Видео собеседника -->
+                <div class="relative w-full aspect-[3/4] bg-black rounded-xl overflow-hidden mb-2">
+                    <video id="remote-video" autoplay playsinline class="w-full h-full object-cover"></video>
+                    <div id="remote-video-loader" class="absolute inset-0 flex flex-col justify-center items-center text-chipmunk">
+                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                        <span class="text-xs text-stone-300">Ожидание...</span>
+                    </div>
+                </div>
+
+                <!-- Мое видео (маленькое) -->
+                <div class="relative w-full h-24 bg-black rounded-xl overflow-hidden mb-2 border border-stone-700">
+                    <video id="local-video" autoplay playsinline muted class="w-full h-full object-cover"></video>
+                    <div class="absolute bottom-1 right-1 flex space-x-1">
+                        <button onclick="toggleMic()" id="btn-mic" class="bg-stone-800/80 p-1.5 rounded-md text-white hover:bg-stone-700 backdrop-blur-sm text-xs">
+                            <i class="fas fa-microphone"></i>
+                        </button>
+                        <button onclick="toggleVideo()" id="btn-video" class="bg-stone-800/80 p-1.5 rounded-md text-white hover:bg-stone-700 backdrop-blur-sm text-xs">
+                            <i class="fas fa-video"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Кнопка сброса звонка -->
+                <button onclick="endVideoCall()" class="w-full bg-red-600 hover:bg-red-500 text-white py-2 rounded-xl text-sm font-semibold shadow-lg transition flex justify-center items-center">
+                    <i class="fas fa-phone-slash mr-2"></i> Завершить
+                </button>
+            </div>
+        </div>
+
+        <!-- МОДАЛЬНОЕ ОКНО: Входящий звонок -->
+        <div id="incoming-call-modal" class="hidden absolute inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+            <div class="bg-chipmunk-panel border border-chipmunk rounded-2xl p-6 shadow-2xl w-full max-w-sm text-center animate-bounce">
+                <div class="w-16 h-16 bg-chipmunk rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-lg shadow-chipmunk/50">
+                    <i class="fas fa-video text-white animate-pulse"></i>
+                </div>
+                <h2 class="text-xl font-bold text-white mb-2">Входящий видеозвонок!</h2>
+                <p class="text-stone-400 text-sm mb-6">Собеседник хочет включить камеру.</p>
+                <div class="flex space-x-3">
+                    <button onclick="answerCall()" class="flex-1 bg-green-500 hover:bg-green-400 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-green-500/30">
+                        <i class="fas fa-phone"></i> Принять
+                    </button>
+                    <button onclick="rejectCall()" class="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-red-500/30">
+                        <i class="fas fa-times"></i> Сбросить
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Логика приложения -->
+    <script>
+        // --- ПЕРЕМЕННЫЕ СОСТОЯНИЯ ---
+        let peer = null;            // Экземпляр сети
+        let dataConnection = null;  // Соединение для текста (Чат)
+        let mediaConnection = null; // Соединение для видео
+        let localStream = null;     // Моя камера/микрофон
+        let incomingCallRef = null; // Ссылка на входящий звонок
+        
+        let micEnabled = true;
+        let videoEnabled = true;
+
+        // --- УТИЛИТЫ UI ---
+        const ui = {
+            screenConnect: document.getElementById('screen-connect'),
+            screenChat: document.getElementById('screen-chat'),
+            headerActions: document.getElementById('header-actions'),
+            statusText: document.getElementById('connection-status'),
+            videoOverlay: document.getElementById('video-overlay'),
+            incomingModal: document.getElementById('incoming-call-modal'),
+            chatHistory: document.getElementById('chat-history'),
+            chatInput: document.getElementById('chat-input')
+        };
+
+        function showToast(msg, type = 'info') {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-msg').innerText = msg;
+            
+            const icon = document.getElementById('toast-icon');
+            icon.className = type === 'error' ? 'fas fa-exclamation-triangle mr-2 text-red-400' : 'fas fa-info-circle mr-2 text-chipmunk-light';
+            
+            toast.classList.remove('opacity-0', 'translate-y-[-20px]');
+            setTimeout(() => toast.classList.add('opacity-0', 'translate-y-[-20px]'), 3000);
+        }
+
+        function setStatus(text, colorClass = 'text-stone-400', isPulse = false) {
+            const dot = isPulse ? `<span class="w-2 h-2 rounded-full bg-${colorClass.split('-')[1]}-500 mr-1 animate-pulse"></span>` : `<span class="w-2 h-2 rounded-full bg-${colorClass.split('-')[1]}-500 mr-1"></span>`;
+            ui.statusText.innerHTML = `${dot} <span class="${colorClass}">${text}</span>`;
+        }
+
+        function switchScreen(screen) {
+            ui.screenConnect.classList.add('hidden');
+            ui.screenChat.classList.add('hidden');
+            if(screen === 'chat') {
+                ui.screenChat.classList.remove('hidden');
+                ui.headerActions.classList.remove('hidden');
+            } else {
+                ui.screenConnect.classList.remove('hidden');
+                ui.headerActions.classList.add('hidden');
+            }
+        }
+
+        // --- ИНИЦИАЛИЗАЦИЯ (Без камеры!) ---
+        function initApp() {
+            peer = new Peer({
+                debug: 2,
+                config: {'iceServers': [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ]}
+            });
+
+            peer.on('open', (id) => {
+                document.getElementById('my-id').value = id;
+                setStatus('В сети', 'text-green-500', true);
+            });
+
+            // Когда кто-то пишет НАМ первым (входящий чат)
+            peer.on('connection', (conn) => {
+                if (dataConnection) {
+                    conn.close(); // Запрещаем 3-го лишнего
+                    return;
+                }
+                setupChatConnection(conn);
+            });
+
+            // Когда кто-то звонит НАМ (входящее видео)
+            peer.on('call', (call) => {
+                incomingCallRef = call;
+                ui.incomingModal.classList.remove('hidden');
+            });
+
+            peer.on('error', (err) => {
+                console.error("PeerJS Ошибка:", err);
+                if (err.type === 'peer-unavailable') {
+                    showToast('Собеседник не найден. Проверьте ID.', 'error');
+                    document.getElementById('btn-connect').innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Создать чат';
+                    document.getElementById('btn-connect').disabled = false;
+                } else {
+                    setStatus('Ошибка сети', 'text-red-500');
+                }
+            });
+        }
+
+        // --- ЛОГИКА ТЕКСТОВОГО ЧАТА ---
+        function connectToPeer() {
+            const targetId = document.getElementById('target-id').value.trim();
+            const myId = document.getElementById('my-id').value;
+            
+            if (!targetId) return showToast('Введите ID собеседника', 'error');
+            if (targetId === myId) return showToast('Это ваш собственный ID!', 'error');
+
+            const btn = document.getElementById('btn-connect');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Подключение...';
+            btn.disabled = true;
+
+            const conn = peer.connect(targetId, { reliable: true });
+            
+            conn.on('open', () => {
+                setupChatConnection(conn);
+            });
+        }
+
+        function setupChatConnection(conn) {
+            dataConnection = conn;
+            
+            dataConnection.on('data', (data) => {
+                // Получили сообщение
+                renderMessage(data.text, 'them');
+            });
+
+            dataConnection.on('close', () => {
+                showToast('Собеседник покинул чат', 'error');
+                disconnectChat();
+            });
+
+            // Успешное подключение - меняем экран
+            setStatus('Чат активен', 'text-chipmunk-light');
+            switchScreen('chat');
+            ui.chatHistory.innerHTML = `
+                <div class="flex justify-center my-4">
+                    <span class="bg-stone-800 text-stone-400 text-xs px-3 py-1 rounded-full border border-stone-700 shadow-sm">
+                        Чат с ${conn.peer.substring(0, 5)}... создан 🔒
+                    </span>
+                </div>
+            `;
+            showToast('Чат успешно создан!');
+        }
+
+        function sendMessage(e) {
+            e.preventDefault();
+            if (!dataConnection) return;
+            
+            const text = ui.chatInput.value.trim();
+            if (!text) return;
+
+            // Отправляем текст
+            dataConnection.send({ type: 'text', text: text });
+            
+            // Рисуем у себя
+            renderMessage(text, 'me');
+            
+            ui.chatInput.value = '';
+            ui.chatInput.style.height = 'auto'; // Сброс высоты
+        }
+
+        function renderMessage(text, sender) {
+            const msgDiv = document.createElement('div');
+            const isMe = sender === 'me';
+            
+            msgDiv.className = `flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'}`;
+            
+            const bubble = document.createElement('div');
+            bubble.className = `max-w-[80%] rounded-2xl px-4 py-2 shadow-md ${
+                isMe 
+                ? 'bg-chipmunk text-white rounded-tr-sm' 
+                : 'bg-stone-800 text-stone-100 border border-stone-700 rounded-tl-sm'
+            }`;
+            
+            // Защита от XSS
+            bubble.textContent = text; 
+            
+            // Время
+            const timeSpan = document.createElement('div');
+            timeSpan.className = `text-[10px] mt-1 ${isMe ? 'text-chipmunk-dark text-right' : 'text-stone-500 text-left'}`;
+            const d = new Date();
+            timeSpan.innerText = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+            
+            bubble.appendChild(timeSpan);
+            msgDiv.appendChild(bubble);
+            ui.chatHistory.appendChild(msgDiv);
+            
+            // Прокрутка вниз
+            ui.chatHistory.scrollTop = ui.chatHistory.scrollHeight;
+        }
+
+        function disconnectChat() {
+            if (dataConnection) dataConnection.close();
+            if (mediaConnection) endVideoCall();
+            dataConnection = null;
+            
+            document.getElementById('target-id').value = '';
+            document.getElementById('btn-connect').innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Создать чат';
+            document.getElementById('btn-connect').disabled = false;
+            
+            setStatus('В сети', 'text-green-500', true);
+            switchScreen('connect');
+        }
+
+        // --- ЛОГИКА ВИДЕОЗВОНКОВ (Только при нажатии) ---
+        async function getCameraAccess() {
+            try {
+                if (!localStream) {
+                    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                    document.getElementById('local-video').srcObject = localStream;
+                }
+                return true;
+            } catch (err) {
+                console.error("Camera error:", err);
+                showToast('Нет доступа к камере или микрофону!', 'error');
+                return false;
+            }
+        }
+
+        async function startVideoCall() {
+            if (!dataConnection) return;
+            const targetId = dataConnection.peer;
+
+            // Запрашиваем камеру ТОЛЬКО сейчас
+            const hasCamera = await getCameraAccess();
+            if (!hasCamera) return;
+
+            ui.videoOverlay.classList.remove('hidden');
+            document.getElementById('remote-video-loader').classList.remove('hidden');
+
+            const call = peer.call(targetId, localStream);
+            setupMediaConnection(call);
+        }
+
+        async function answerCall() {
+            ui.incomingModal.classList.add('hidden');
+            
+            const hasCamera = await getCameraAccess();
+            if (!hasCamera) {
+                if (incomingCallRef) incomingCallRef.close();
+                return;
+            }
+
+            if (incomingCallRef) {
+                ui.videoOverlay.classList.remove('hidden');
+                incomingCallRef.answer(localStream);
+                setupMediaConnection(incomingCallRef);
+                incomingCallRef = null;
+            }
+        }
+
+        function rejectCall() {
+            ui.incomingModal.classList.add('hidden');
+            if (incomingCallRef) {
+                incomingCallRef.close();
+                incomingCallRef = null;
+            }
+        }
+
+        function setupMediaConnection(call) {
+            mediaConnection = call;
+            
+            call.on('stream', (remoteStream) => {
+                document.getElementById('remote-video').srcObject = remoteStream;
+                document.getElementById('remote-video-loader').classList.add('hidden');
+            });
+
+            call.on('close', () => {
+                endVideoCallLocally();
+            });
+            call.on('error', () => {
+                showToast('Ошибка видеосвязи', 'error');
+                endVideoCallLocally();
+            });
+        }
+
+        function endVideoCall() {
+            if (mediaConnection) {
+                mediaConnection.close();
+            }
+            endVideoCallLocally();
+        }
+
+        function endVideoCallLocally() {
+            mediaConnection = null;
+            document.getElementById('remote-video').srcObject = null;
+            ui.videoOverlay.classList.add('hidden');
+            
+            // Если хотим выключать камеру после звонка:
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+                document.getElementById('local-video').srcObject = null;
+            }
+        }
+
+        // --- УПРАВЛЕНИЕ МЕДИА ---
+        function toggleMic() {
+            if(!localStream) return;
+            micEnabled = !micEnabled;
+            localStream.getAudioTracks().forEach(track => track.enabled = micEnabled);
+            const btn = document.getElementById('btn-mic');
+            btn.className = `p-1.5 rounded-md text-white backdrop-blur-sm text-xs ${micEnabled ? 'bg-stone-800/80 hover:bg-stone-700' : 'bg-red-500/80 hover:bg-red-500'}`;
+            btn.innerHTML = `<i class="fas ${micEnabled ? 'fa-microphone' : 'fa-microphone-slash'}"></i>`;
+        }
+
+        function toggleVideo() {
+            if(!localStream) return;
+            videoEnabled = !videoEnabled;
+            localStream.getVideoTracks().forEach(track => track.enabled = videoEnabled);
+            const btn = document.getElementById('btn-video');
+            btn.className = `p-1.5 rounded-md text-white backdrop-blur-sm text-xs ${videoEnabled ? 'bg-stone-800/80 hover:bg-stone-700' : 'bg-red-500/80 hover:bg-red-500'}`;
+            btn.innerHTML = `<i class="fas ${videoEnabled ? 'fa-video' : 'fa-video-slash'}"></i>`;
+        }
+
+        function copyId() {
+            const id = document.getElementById('my-id').value;
+            if(id === 'Генерация...') return;
+            navigator.clipboard.writeText(id).then(() => {
+                showToast('ID скопирован!');
+            }).catch(() => {
+                const input = document.getElementById('my-id');
+                input.select();
+                document.execCommand('copy');
+                showToast('ID скопирован!');
+            });
+        }
+
+        // Автоматическое изменение высоты поля ввода
+        ui.chatInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+        
+        // Отправка по Enter (без Shift)
+        ui.chatInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                document.getElementById('chat-form').dispatchEvent(new Event('submit'));
+            }
+        });
+
+        // ЗАПУСК
+        window.onload = initApp;
+
+    </script>
+</body>
+</html>
