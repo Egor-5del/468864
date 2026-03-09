@@ -268,7 +268,6 @@
         // --- ПРОВЕРКА ВСТРОЕННОГО БРАУЗЕРА (WEBVIEW) ---
         function checkWebView() {
             const ua = navigator.userAgent || navigator.vendor || window.opera;
-            // Проверяем Telegram, VK, Instagram, Facebook
             if ((ua.indexOf("FBAN") > -1) || (ua.indexOf("FBAV") > -1) || (ua.indexOf("Instagram") > -1) || (ua.indexOf("Telegram") > -1) || (ua.indexOf("VK") > -1)) {
                 document.getElementById('webview-warning').classList.remove('hidden');
                 return true;
@@ -302,7 +301,6 @@
             }
         }
 
-        // Ручная перезагрузка соединения (вызывается кнопкой, если зависло)
         function forceReconnect() {
             if (peer) {
                 peer.destroy();
@@ -319,13 +317,12 @@
 
         // --- ИНИЦИАЛИЗАЦИЯ ---
         function initApp() {
-            checkWebView(); // Показываем баннер, если открыто в мессенджере
+            checkWebView(); 
 
             if (peer) {
                 peer.destroy();
             }
 
-            // Таймер для отображения кнопки "Перезапуск"
             if (generationTimeout) clearTimeout(generationTimeout);
             generationTimeout = setTimeout(() => {
                 if (ui.myIdInput.value === 'Генерация...') {
@@ -334,15 +331,27 @@
                 }
             }, 6000);
 
-            // Настраиваем PeerJS с жесткими портами для обхода блокировок
+            // ДОБАВЛЕНЫ TURN-СЕРВЕРЫ: Они пробивают блокировки 4G/LTE от мобильных операторов
             peer = new Peer(APP_PREFIX + myCustomId, {
                 debug: 2,
-                secure: true,
-                port: 443,
-                config: {'iceServers': [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun.cloudflare.com:3478' }
-                ]}
+                pingInterval: 10000,
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:global.stun.twilio.com:3478' },
+                        // TURN-сервер (ретранслятор трафика для закрытых мобильных сетей)
+                        {
+                            urls: "turn:openrelay.metered.ca:80",
+                            username: "openrelayproject",
+                            credential: "openrelayproject"
+                        },
+                        {
+                            urls: "turn:openrelay.metered.ca:443",
+                            username: "openrelayproject",
+                            credential: "openrelayproject"
+                        }
+                    ]
+                }
             });
 
             peer.on('open', (id) => {
@@ -414,7 +423,6 @@
             });
         }
 
-        // --- ВОССТАНОВЛЕНИЕ ПРИ ВОЗВРАТЕ В БРАУЗЕР ---
         document.addEventListener("visibilitychange", () => {
             if (document.visibilityState === 'visible') {
                 if (peer && peer.disconnected && !peer.destroyed) {
