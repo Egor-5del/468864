@@ -231,9 +231,12 @@
         
         let micEnabled = true;
         let videoEnabled = true;
-        let currentCallType = null; // 'audio' или 'video'
+        let currentCallType = null; 
 
-        // Генерация 6-значного номера
+        // Секретный префикс для предотвращения глобальных конфликтов ID на сервере PeerJS
+        const APP_PREFIX = 'chipmunk-msg-'; 
+        
+        // Генерация 6-значного номера для пользователя
         const generateShortId = () => Math.floor(100000 + Math.random() * 900000).toString();
         let myCustomId = generateShortId();
 
@@ -276,9 +279,14 @@
 
         // --- ИНИЦИАЛИЗАЦИЯ ---
         function initApp() {
-            // Инициализация PeerJS с расширенными серверами (добавлен Cloudflare для стабильности)
-            peer = new Peer(myCustomId, {
+            if (peer) {
+                peer.destroy();
+            }
+
+            // Инициализируем PeerJS с длинным секретным ID для защиты от коллизий
+            peer = new Peer(APP_PREFIX + myCustomId, {
                 debug: 2,
+                pingInterval: 5000, // Очень важно для стабильной связи на телефонах
                 config: {'iceServers': [
                     { urls: 'stun:stun.l.google.com:19302' },
                     { urls: 'stun:stun.cloudflare.com:3478' },
@@ -287,12 +295,13 @@
             });
 
             peer.on('open', (id) => {
-                document.getElementById('my-id').value = id;
+                // Пользователю показываем только 6 цифр
+                document.getElementById('my-id').value = myCustomId;
                 setStatus('В сети', 'text-green-500', true);
                 if (reconnectTimeout) clearTimeout(reconnectTimeout);
             });
 
-            // ЗАЩИТА ОТ СПАМА И БЛОКИРОВОК (Ждем 3 секунды перед реконнектом)
+            // ЗАЩИТА ОТ СПАМА И БЛОКИРОВОК
             peer.on('disconnected', () => {
                 setStatus('Сбой сети, восстанавливаем...', 'text-yellow-500', true);
                 if (!peer.destroyed) {
@@ -337,14 +346,16 @@
                     document.getElementById('btn-connect').innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Создать чат';
                     document.getElementById('btn-connect').disabled = false;
                 } else if (err.type === 'unavailable-id') {
+                    // Если даже длинный ID занят
                     myCustomId = generateShortId();
                     initApp(); 
-                } else if (err.type === 'network' || err.type === 'disconnected') {
-                    setStatus('Ожидание сети...', 'text-yellow-500');
-                    if (!peer.destroyed) {
-                        if (reconnectTimeout) clearTimeout(reconnectTimeout);
-                        reconnectTimeout = setTimeout(() => peer.reconnect(), 3000);
-                    }
+                } else if (err.type === 'network' || err.type === 'disconnected' || err.type === 'server-error') {
+                    setStatus('Жесткий сбой. Перезапуск...', 'text-red-400');
+                    // Если сервер жестко отбросил, пересоздаем соединение полностью
+                    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                    reconnectTimeout = setTimeout(() => {
+                        initApp();
+                    }, 5000);
                 } else {
                     setStatus('Ошибка сервера', 'text-red-500');
                 }
@@ -363,7 +374,8 @@
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Подключение...';
             btn.disabled = true;
 
-            const conn = peer.connect(targetId, { reliable: true });
+            // Добавляем секретный префикс при подключении к другу
+            const conn = peer.connect(APP_PREFIX + targetId, { reliable: true });
             
             conn.on('open', () => {
                 setupChatConnection(conn);
@@ -384,10 +396,14 @@
 
             setStatus('Чат активен', 'text-chipmunk-light');
             switchScreen('chat');
+            
+            // Убираем префикс для отображения пользователю
+            const cleanPeerId = conn.peer.replace(APP_PREFIX, '');
+            
             ui.chatHistory.innerHTML = `
                 <div class="flex justify-center my-4">
                     <span class="bg-stone-800 text-stone-400 text-[10px] sm:text-xs px-3 py-1 rounded-full border border-stone-700 shadow-sm text-center">
-                        Чат с пользователем ${conn.peer} создан 🔒
+                        Чат с пользователем ${cleanPeerId} создан 🔒
                     </span>
                 </div>
             `;
@@ -495,7 +511,7 @@
 
         async function startCall(type) {
             if (!dataConnection) return;
-            const targetId = dataConnection.peer;
+            const targetId = dataConnection.peer; // targetId уже содержит APP_PREFIX
             currentCallType = type;
 
             const hasMedia = await getMediaAccess(type);
