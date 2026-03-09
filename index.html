@@ -312,7 +312,7 @@
             
             setTimeout(() => {
                 initApp();
-            }, 1000);
+            }, 500);
         }
 
         // --- ИНИЦИАЛИЗАЦИЯ ---
@@ -321,6 +321,7 @@
 
             if (peer) {
                 peer.destroy();
+                peer = null;
             }
 
             if (generationTimeout) clearTimeout(generationTimeout);
@@ -331,10 +332,13 @@
                 }
             }, 6000);
 
-            // ДОБАВЛЕНЫ TURN-СЕРВЕРЫ: Они пробивают блокировки 4G/LTE от мобильных операторов
+            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ДЛЯ ТЕЛЕФОНОВ:
+            // Жестко указываем порт 443 и secure: true для обхода блокировок оператора связи
             peer = new Peer(APP_PREFIX + myCustomId, {
+                host: '0.peerjs.com',
+                port: 443,
+                secure: true,
                 debug: 2,
-                pingInterval: 10000,
                 config: {
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
@@ -363,13 +367,12 @@
             });
 
             peer.on('disconnected', () => {
-                setStatus('Связь потеряна. Ожидание...', 'text-yellow-500', true);
-                if (!peer.destroyed) {
-                    if (reconnectTimeout) clearTimeout(reconnectTimeout);
-                    reconnectTimeout = setTimeout(() => {
-                        peer.reconnect();
-                    }, 3000);
-                }
+                setStatus('Связь потеряна. Обновление...', 'text-yellow-500', true);
+                if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                // На мобильных устройствах .reconnect() часто ломается, делаем полный перезапуск
+                reconnectTimeout = setTimeout(() => {
+                    initApp();
+                }, 2000);
             });
 
             peer.on('connection', (conn) => {
@@ -417,17 +420,23 @@
                     if (ui.myIdInput.value === 'Генерация...') {
                         ui.btnRetry.classList.remove('hidden');
                     }
+                    // Жесткий перезапуск при ошибке сети
+                    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                    reconnectTimeout = setTimeout(() => {
+                        initApp();
+                    }, 3000);
                 } else {
                     setStatus('Ошибка: ' + err.type, 'text-red-500');
                 }
             });
         }
 
+        // --- ВОССТАНОВЛЕНИЕ ПРИ ВОЗВРАТЕ В БРАУЗЕР (ВЫХОД ИЗ СПЯЩЕГО РЕЖИМА) ---
         document.addEventListener("visibilitychange", () => {
             if (document.visibilityState === 'visible') {
-                if (peer && peer.disconnected && !peer.destroyed) {
-                    setStatus('Возврат в браузер, переподключение...', 'text-yellow-500', true);
-                    peer.reconnect();
+                if (!peer || peer.disconnected || peer.destroyed) {
+                    setStatus('Перезапуск сети...', 'text-yellow-500', true);
+                    initApp(); // Полный перезапуск вместо попытки реанимировать мертвое соединение
                 }
             }
         });
