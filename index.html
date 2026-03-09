@@ -40,8 +40,13 @@
         ::-webkit-scrollbar-thumb { background: #ea580c; border-radius: 10px; }
     </style>
 </head>
-<!-- Используем h-[100dvh] для идеальной работы на мобильных телефонах -->
 <body class="bg-chipmunk-bg text-gray-100 font-sans h-[100dvh] flex flex-col overflow-hidden selection:bg-chipmunk-light selection:text-white">
+
+    <!-- ПРЕДУПРЕЖДЕНИЕ О ВСТРОЕННОМ БРАУЗЕРЕ (Telegram/VK) -->
+    <div id="webview-warning" class="hidden bg-red-600 text-white text-sm px-4 py-3 text-center z-50 font-medium shadow-lg flex-shrink-0 flex items-center justify-center">
+        <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
+        <span>Вы открыли сайт внутри мессенджера! Нажмите на <b>три точки</b> в углу и выберите <b>«Открыть в браузере»</b> (Chrome/Safari), иначе звонки работать не будут.</span>
+    </div>
 
     <!-- Всплывающее уведомление (Toast) -->
     <div id="toast" class="fixed top-4 left-1/2 transform -translate-x-1/2 bg-chipmunk-dark text-white px-6 py-3 rounded-full shadow-2xl z-50 transition-all duration-300 opacity-0 translate-y-[-20px] pointer-events-none flex items-center">
@@ -94,7 +99,13 @@
                     </h2>
                     <div class="flex items-center space-x-2 relative">
                         <input type="text" id="my-id" readonly value="Генерация..." class="flex-1 bg-stone-900 border border-stone-600 rounded-xl px-4 py-3 text-white outline-none font-mono text-lg tracking-widest text-center w-full font-bold">
-                        <button onclick="copyId()" class="bg-chipmunk hover:bg-chipmunk-light text-white p-3 rounded-xl transition flex items-center justify-center w-12 h-12 shadow-md">
+                        
+                        <!-- Кнопка ручной перезагрузки соединения (появится при зависании) -->
+                        <button id="btn-retry" onclick="forceReconnect()" class="hidden bg-yellow-600 hover:bg-yellow-500 text-white p-3 rounded-xl transition flex items-center justify-center w-12 h-12 shadow-md animate-pulse" title="Переподключиться">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+
+                        <button onclick="copyId()" class="bg-chipmunk hover:bg-chipmunk-light text-white p-3 rounded-xl transition flex items-center justify-center w-12 h-12 shadow-md" title="Скопировать код">
                             <i class="fas fa-copy"></i>
                         </button>
                     </div>
@@ -228,6 +239,7 @@
         let localStream = null;     
         let incomingCallRef = null; 
         let reconnectTimeout = null;
+        let generationTimeout = null;
         
         let micEnabled = true;
         let videoEnabled = true;
@@ -248,8 +260,21 @@
             videoOverlay: document.getElementById('video-overlay'),
             incomingModal: document.getElementById('incoming-call-modal'),
             chatHistory: document.getElementById('chat-history'),
-            chatInput: document.getElementById('chat-input')
+            chatInput: document.getElementById('chat-input'),
+            btnRetry: document.getElementById('btn-retry'),
+            myIdInput: document.getElementById('my-id')
         };
+
+        // --- ПРОВЕРКА ВСТРОЕННОГО БРАУЗЕРА (WEBVIEW) ---
+        function checkWebView() {
+            const ua = navigator.userAgent || navigator.vendor || window.opera;
+            // Проверяем Telegram, VK, Instagram, Facebook
+            if ((ua.indexOf("FBAN") > -1) || (ua.indexOf("FBAV") > -1) || (ua.indexOf("Instagram") > -1) || (ua.indexOf("Telegram") > -1) || (ua.indexOf("VK") > -1)) {
+                document.getElementById('webview-warning').classList.remove('hidden');
+                return true;
+            }
+            return false;
+        }
 
         function showToast(msg, type = 'info') {
             const toast = document.getElementById('toast');
@@ -277,24 +302,53 @@
             }
         }
 
+        // Ручная перезагрузка соединения (вызывается кнопкой, если зависло)
+        function forceReconnect() {
+            if (peer) {
+                peer.destroy();
+                peer = null;
+            }
+            ui.myIdInput.value = 'Генерация...';
+            ui.btnRetry.classList.add('hidden');
+            setStatus('Ручной перезапуск...', 'text-yellow-500', true);
+            
+            setTimeout(() => {
+                initApp();
+            }, 1000);
+        }
+
         // --- ИНИЦИАЛИЗАЦИЯ ---
         function initApp() {
+            checkWebView(); // Показываем баннер, если открыто в мессенджере
+
             if (peer) {
                 peer.destroy();
             }
 
+            // Таймер для отображения кнопки "Перезапуск"
+            if (generationTimeout) clearTimeout(generationTimeout);
+            generationTimeout = setTimeout(() => {
+                if (ui.myIdInput.value === 'Генерация...') {
+                    ui.btnRetry.classList.remove('hidden');
+                    setStatus('Сервер перегружен. Нажмите желтую кнопку', 'text-red-400');
+                }
+            }, 6000);
+
+            // Настраиваем PeerJS с жесткими портами для обхода блокировок
             peer = new Peer(APP_PREFIX + myCustomId, {
                 debug: 2,
-                pingInterval: 10000, // Снижаем агрессивность пинга для стабильности
+                secure: true,
+                port: 443,
                 config: {'iceServers': [
                     { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun.cloudflare.com:3478' },
-                    { urls: 'stun:global.stun.twilio.com:3478' }
+                    { urls: 'stun:stun.cloudflare.com:3478' }
                 ]}
             });
 
             peer.on('open', (id) => {
-                document.getElementById('my-id').value = myCustomId;
+                if (generationTimeout) clearTimeout(generationTimeout);
+                ui.btnRetry.classList.add('hidden');
+                ui.myIdInput.value = myCustomId;
                 setStatus('В сети', 'text-green-500', true);
                 if (reconnectTimeout) clearTimeout(reconnectTimeout);
             });
@@ -338,7 +392,6 @@
             peer.on('error', (err) => {
                 console.error("PeerJS Ошибка:", err);
                 
-                // Всегда разблокируем кнопку подключения при любой ошибке
                 const btn = document.getElementById('btn-connect');
                 if (btn) {
                     btn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Создать чат';
@@ -346,16 +399,15 @@
                 }
 
                 if (err.type === 'peer-unavailable') {
-                    showToast('Собеседник не в сети (возможно, свернул браузер)', 'error');
+                    showToast('Собеседник не в сети', 'error');
                 } else if (err.type === 'unavailable-id') {
                     myCustomId = generateShortId();
                     initApp(); 
                 } else if (err.type === 'network' || err.type === 'disconnected' || err.type === 'server-error') {
                     setStatus('Сбой сети. Обновление...', 'text-red-400');
-                    if (reconnectTimeout) clearTimeout(reconnectTimeout);
-                    reconnectTimeout = setTimeout(() => {
-                        initApp();
-                    }, 4000);
+                    if (ui.myIdInput.value === 'Генерация...') {
+                        ui.btnRetry.classList.remove('hidden');
+                    }
                 } else {
                     setStatus('Ошибка: ' + err.type, 'text-red-500');
                 }
@@ -363,7 +415,6 @@
         }
 
         // --- ВОССТАНОВЛЕНИЕ ПРИ ВОЗВРАТЕ В БРАУЗЕР ---
-        // Когда пользователь сворачивает и разворачивает браузер (Telegram, WhatsApp)
         document.addEventListener("visibilitychange", () => {
             if (document.visibilityState === 'visible') {
                 if (peer && peer.disconnected && !peer.destroyed) {
@@ -385,7 +436,6 @@
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Подключение...';
             btn.disabled = true;
 
-            // Убрал reliable: true, так как он часто вызывает зависание на плохом интернете
             const conn = peer.connect(APP_PREFIX + targetId);
             
             conn.on('open', () => {
