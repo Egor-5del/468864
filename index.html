@@ -166,7 +166,7 @@
                     </div>
 
                     <!-- Видео собеседника -->
-                    <video id="remote-video" autoplay playsinline class="w-full h-full object-cover"></video>
+                    <video id="remote-video" autoplay playsinline class="w-full h-full object-cover hidden"></video>
                     
                     <!-- Лоадер ожидания -->
                     <div id="remote-video-loader" class="absolute inset-0 flex flex-col justify-center items-center bg-stone-900/90 z-20">
@@ -227,6 +227,7 @@
         let mediaConnection = null; 
         let localStream = null;     
         let incomingCallRef = null; 
+        let reconnectTimeout = null;
         
         let micEnabled = true;
         let videoEnabled = true;
@@ -275,27 +276,31 @@
 
         // --- ИНИЦИАЛИЗАЦИЯ ---
         function initApp() {
-            // Инициализация PeerJS с расширенными серверами для мобильных сетей
+            // Инициализация PeerJS с расширенными серверами (добавлен Cloudflare для стабильности)
             peer = new Peer(myCustomId, {
                 debug: 2,
                 config: {'iceServers': [
                     { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:global.stun.twilio.com:3478' }, // Дополнительный мощный сервер
-                    { urls: 'stun:stun.relay.metered.ca:80' }     // Запасной сервер
+                    { urls: 'stun:stun.cloudflare.com:3478' },
+                    { urls: 'stun:global.stun.twilio.com:3478' }
                 ]}
             });
 
             peer.on('open', (id) => {
                 document.getElementById('my-id').value = id;
                 setStatus('В сети', 'text-green-500', true);
+                if (reconnectTimeout) clearTimeout(reconnectTimeout);
             });
 
-            // АВТО-ПЕРЕПОДКЛЮЧЕНИЕ: Если телефон свернул браузер или моргнул интернет
+            // ЗАЩИТА ОТ СПАМА И БЛОКИРОВОК (Ждем 3 секунды перед реконнектом)
             peer.on('disconnected', () => {
                 setStatus('Сбой сети, восстанавливаем...', 'text-yellow-500', true);
                 if (!peer.destroyed) {
-                    peer.reconnect();
+                    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                    reconnectTimeout = setTimeout(() => {
+                        console.log("Попытка переподключения...");
+                        peer.reconnect();
+                    }, 3000);
                 }
             });
 
@@ -311,7 +316,6 @@
                 incomingCallRef = call;
                 currentCallType = call.metadata?.type || 'video';
                 
-                // Настройка окна входящего звонка в зависимости от типа
                 const title = document.getElementById('incoming-call-title');
                 const icon = document.getElementById('incoming-call-icon');
                 
@@ -333,12 +337,14 @@
                     document.getElementById('btn-connect').innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Создать чат';
                     document.getElementById('btn-connect').disabled = false;
                 } else if (err.type === 'unavailable-id') {
-                    // Если случайный код вдруг занят (редкость), генерируем новый
                     myCustomId = generateShortId();
                     initApp(); 
                 } else if (err.type === 'network' || err.type === 'disconnected') {
-                    setStatus('Сеть оборвалась. Пытаемся вернуть...', 'text-yellow-500');
-                    if (!peer.destroyed) peer.reconnect();
+                    setStatus('Ожидание сети...', 'text-yellow-500');
+                    if (!peer.destroyed) {
+                        if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                        reconnectTimeout = setTimeout(() => peer.reconnect(), 3000);
+                    }
                 } else {
                     setStatus('Ошибка сервера', 'text-red-500');
                 }
@@ -445,7 +451,6 @@
         // --- ЛОГИКА ЗВОНКОВ (АУДИО И ВИДЕО) ---
         async function getMediaAccess(type) {
             try {
-                // Если уже есть поток, отключаем его перед сменой режима
                 if (localStream) {
                     localStream.getTracks().forEach(t => t.stop());
                 }
@@ -472,11 +477,15 @@
             const isAudio = type === 'audio';
             document.getElementById('call-type-badge').innerHTML = isAudio ? '<i class="fas fa-phone-alt text-green-400 mr-1"></i> Аудиозвонок' : '<i class="fas fa-video text-chipmunk-light mr-1"></i> Видеозвонок';
             
-            // Настройка отображения блоков
             document.getElementById('audio-only-remote').classList.toggle('hidden', !isAudio);
-            document.getElementById('remote-video').classList.toggle('hidden', isAudio);
             
-            // Скрываем свое видео окно и кнопку видео, если это чисто аудиозвонок
+            // Если видео - удаляем скрывающий класс
+            if (!isAudio) {
+                document.getElementById('remote-video').classList.remove('hidden');
+            } else {
+                document.getElementById('remote-video').classList.add('hidden');
+            }
+            
             document.getElementById('local-video-wrapper').classList.toggle('hidden', isAudio);
             document.getElementById('btn-video').classList.toggle('hidden', isAudio);
             
@@ -494,7 +503,6 @@
 
             setCallUI(type);
 
-            // Передаем metadata, чтобы друг знал тип звонка
             const call = peer.call(targetId, localStream, { metadata: { type: type } });
             setupMediaConnection(call);
         }
@@ -527,13 +535,20 @@
         function setupMediaConnection(call) {
             mediaConnection = call;
             
+            // Надежная обработка видеопотока для компьютера и смартфона
             call.on('stream', (remoteStream) => {
-                document.getElementById('remote-video').srcObject = remoteStream;
-                document.getElementById('remote-video-loader').classList.add('hidden');
-                
-                // Для мобильных устройств (iOS Safari) может потребоваться явный play
                 const videoEl = document.getElementById('remote-video');
-                videoEl.play().catch(e => console.log("Play error:", e));
+                
+                // Предотвращаем двойной запуск события
+                if (videoEl.srcObject !== remoteStream) {
+                    videoEl.srcObject = remoteStream;
+                    
+                    // Гарантированный старт после загрузки метаданных
+                    videoEl.onloadedmetadata = () => {
+                        videoEl.play().catch(e => console.log("Ошибка автовоспроизведения:", e));
+                        document.getElementById('remote-video-loader').classList.add('hidden');
+                    };
+                }
             });
 
             call.on('close', () => endCallLocally());
@@ -552,7 +567,10 @@
 
         function endCallLocally() {
             mediaConnection = null;
-            document.getElementById('remote-video').srcObject = null;
+            const videoEl = document.getElementById('remote-video');
+            videoEl.srcObject = null;
+            videoEl.classList.add('hidden'); // прячем окно
+            
             ui.videoOverlay.classList.add('hidden');
             
             if (localStream) {
@@ -577,7 +595,6 @@
         function toggleMic() {
             if(!localStream) return;
             micEnabled = !micEnabled;
-            // Ищем аудиотреки и переключаем
             localStream.getAudioTracks().forEach(track => track.enabled = micEnabled);
             updateMediaButtons();
         }
@@ -585,7 +602,6 @@
         function toggleVideo() {
             if(!localStream || currentCallType === 'audio') return;
             videoEnabled = !videoEnabled;
-            // Ищем видеотреки и переключаем
             localStream.getVideoTracks().forEach(track => track.enabled = videoEnabled);
             updateMediaButtons();
         }
@@ -603,13 +619,11 @@
             });
         }
 
-        // Автоматическое изменение высоты поля ввода для текста
         ui.chatInput.addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = (this.scrollHeight) + 'px';
         });
         
-        // Отправка по Enter (без Shift) - работает и на ПК и на смартфонах
         ui.chatInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
