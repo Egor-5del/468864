@@ -40,41 +40,48 @@
         ::-webkit-scrollbar-thumb { background: #ea580c; border-radius: 10px; }
     </style>
 </head>
-<body class="bg-chipmunk-bg text-gray-100 font-sans h-screen flex flex-col overflow-hidden selection:bg-chipmunk-light selection:text-white">
+<!-- Используем h-[100dvh] для идеальной работы на мобильных телефонах -->
+<body class="bg-chipmunk-bg text-gray-100 font-sans h-[100dvh] flex flex-col overflow-hidden selection:bg-chipmunk-light selection:text-white">
 
     <!-- Всплывающее уведомление (Toast) -->
     <div id="toast" class="fixed top-4 left-1/2 transform -translate-x-1/2 bg-chipmunk-dark text-white px-6 py-3 rounded-full shadow-2xl z-50 transition-all duration-300 opacity-0 translate-y-[-20px] pointer-events-none flex items-center">
         <i id="toast-icon" class="fas fa-info-circle mr-2"></i>
-        <span id="toast-msg" class="font-medium"></span>
+        <span id="toast-msg" class="font-medium whitespace-nowrap"></span>
     </div>
 
     <!-- Верхняя панель (Header) -->
-    <header class="bg-chipmunk-panel border-b border-stone-700 p-4 shadow-md flex justify-between items-center z-20">
+    <header class="bg-chipmunk-panel border-b border-stone-700 p-3 sm:p-4 shadow-md flex justify-between items-center z-20 flex-shrink-0">
         <div class="flex items-center space-x-3">
-            <div class="w-10 h-10 bg-chipmunk rounded-xl flex items-center justify-center text-xl shadow-lg shadow-chipmunk/20">
+            <div class="w-10 h-10 bg-chipmunk rounded-xl flex items-center justify-center text-xl shadow-lg shadow-chipmunk/20 flex-shrink-0">
                 🐿️
             </div>
-            <div>
-                <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-orange-400 to-chipmunk">Chipmunk</h1>
-                <p id="connection-status" class="text-xs text-stone-400 flex items-center">
-                    <span class="w-2 h-2 rounded-full bg-yellow-500 mr-1 animate-pulse"></span> Подключение к серверу...
+            <div class="overflow-hidden">
+                <h1 class="text-lg sm:text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-orange-400 to-chipmunk truncate">Chipmunk</h1>
+                <p id="connection-status" class="text-xs text-stone-400 flex items-center truncate">
+                    <span class="w-2 h-2 rounded-full bg-yellow-500 mr-1 animate-pulse flex-shrink-0"></span> Подключение...
                 </p>
             </div>
         </div>
         
         <!-- Кнопки в шапке (появятся при чате) -->
-        <div id="header-actions" class="hidden flex space-x-2">
-            <button onclick="startVideoCall()" class="bg-stone-700 hover:bg-stone-600 text-white p-2 sm:px-4 sm:py-2 rounded-lg transition flex items-center shadow-md">
-                <i class="fas fa-video sm:mr-2 text-chipmunk-light"></i> <span class="hidden sm:inline">Видеозвонок</span>
+        <div id="header-actions" class="hidden flex space-x-1 sm:space-x-2">
+            <!-- Кнопка АУДИО звонка -->
+            <button onclick="startCall('audio')" class="bg-stone-700 hover:bg-stone-600 text-white p-2.5 sm:px-4 sm:py-2 rounded-lg transition flex items-center shadow-md" title="Аудиозвонок">
+                <i class="fas fa-phone-alt text-green-400"></i> <span class="hidden sm:inline ml-2">Аудио</span>
             </button>
-            <button onclick="disconnectChat()" class="bg-red-500/20 hover:bg-red-500/40 text-red-400 p-2 sm:px-4 sm:py-2 rounded-lg transition flex items-center">
+            <!-- Кнопка ВИДЕО звонка -->
+            <button onclick="startCall('video')" class="bg-stone-700 hover:bg-stone-600 text-white p-2.5 sm:px-4 sm:py-2 rounded-lg transition flex items-center shadow-md" title="Видеозвонок">
+                <i class="fas fa-video text-chipmunk-light"></i> <span class="hidden sm:inline ml-2">Видео</span>
+            </button>
+            <!-- Выход -->
+            <button onclick="disconnectChat()" class="bg-red-500/20 hover:bg-red-500/40 text-red-400 p-2.5 sm:px-4 sm:py-2 rounded-lg transition flex items-center" title="Покинуть чат">
                 <i class="fas fa-sign-out-alt"></i>
             </button>
         </div>
     </header>
 
     <!-- Основной контейнер -->
-    <main class="flex-1 relative flex">
+    <main class="flex-1 relative flex overflow-hidden">
         
         <!-- ЭКРАН 1: Подключение (Лобби) -->
         <div id="screen-connect" class="absolute inset-0 flex flex-col items-center justify-center p-4 z-10 overflow-y-auto">
@@ -83,24 +90,24 @@
                 <!-- Карточка моего ID -->
                 <div class="bg-chipmunk-panel border border-stone-700 rounded-2xl p-6 shadow-xl">
                     <h2 class="text-lg font-semibold mb-2 text-stone-300 flex items-center">
-                        <i class="fas fa-id-badge mr-2 text-chipmunk"></i> Мой ID
+                        <i class="fas fa-id-badge mr-2 text-chipmunk"></i> Ваш номер (Код)
                     </h2>
                     <div class="flex items-center space-x-2 relative">
-                        <input type="text" id="my-id" readonly value="Генерация..." class="flex-1 bg-stone-900 border border-stone-600 rounded-xl px-4 py-3 text-stone-100 outline-none font-mono text-sm w-full">
-                        <button onclick="copyId()" class="absolute right-2 top-1/2 transform -translate-y-1/2 bg-chipmunk hover:bg-chipmunk-light text-white p-2 rounded-lg transition flex items-center justify-center w-10 h-10 shadow-md">
+                        <input type="text" id="my-id" readonly value="Генерация..." class="flex-1 bg-stone-900 border border-stone-600 rounded-xl px-4 py-3 text-white outline-none font-mono text-lg tracking-widest text-center w-full font-bold">
+                        <button onclick="copyId()" class="bg-chipmunk hover:bg-chipmunk-light text-white p-3 rounded-xl transition flex items-center justify-center w-12 h-12 shadow-md">
                             <i class="fas fa-copy"></i>
                         </button>
                     </div>
-                    <p class="text-xs text-stone-500 mt-3 text-center">Отправьте этот ID другу, чтобы он мог вам написать.</p>
+                    <p class="text-xs text-stone-500 mt-3 text-center">Продиктуйте или отправьте этот 6-значный код другу.</p>
                 </div>
 
                 <!-- Карточка подключения к другу -->
                 <div class="bg-chipmunk-panel border border-stone-700 rounded-2xl p-6 shadow-xl">
                     <h2 class="text-lg font-semibold mb-2 text-stone-300 flex items-center">
-                        <i class="fas fa-user-plus mr-2 text-chipmunk"></i> Написать другу
+                        <i class="fas fa-user-plus mr-2 text-chipmunk"></i> Подключиться к другу
                     </h2>
                     <div class="flex flex-col space-y-3">
-                        <input type="text" id="target-id" placeholder="Вставьте ID друга..." class="w-full bg-stone-900 border border-stone-600 focus:border-chipmunk rounded-xl px-4 py-3 text-stone-100 outline-none transition font-mono text-sm">
+                        <input type="number" id="target-id" placeholder="Введите код друга..." class="w-full bg-stone-900 border border-stone-600 focus:border-chipmunk rounded-xl px-4 py-3 text-white outline-none transition font-mono text-base tracking-widest text-center appearance-none">
                         <button id="btn-connect" onclick="connectToPeer()" class="w-full bg-chipmunk hover:bg-chipmunk-light text-white font-bold py-3 rounded-xl transition flex justify-center items-center shadow-lg shadow-chipmunk/30">
                             <i class="fas fa-paper-plane mr-2"></i> Создать чат
                         </button>
@@ -117,17 +124,17 @@
             <div id="chat-history" class="flex-1 overflow-y-auto p-4 space-y-4">
                 <!-- Системное сообщение -->
                 <div class="flex justify-center my-4">
-                    <span class="bg-stone-800 text-stone-400 text-xs px-3 py-1 rounded-full border border-stone-700 shadow-sm">
+                    <span class="bg-stone-800 text-stone-400 text-[10px] sm:text-xs px-3 py-1 rounded-full border border-stone-700 shadow-sm text-center">
                         Чат защищен шифрованием P2P 🔒
                     </span>
                 </div>
-                <!-- Сообщения будут добавляться сюда через JS -->
             </div>
 
             <!-- Зона ввода текста -->
-            <div class="bg-chipmunk-panel border-t border-stone-700 p-3 sm:p-4">
+            <div class="bg-chipmunk-panel border-t border-stone-700 p-2 sm:p-4 flex-shrink-0">
                 <form id="chat-form" onsubmit="sendMessage(event)" class="flex items-end space-x-2 max-w-4xl mx-auto">
-                    <textarea id="chat-input" rows="1" placeholder="Напишите сообщение..." class="flex-1 bg-stone-900 border border-stone-600 focus:border-chipmunk rounded-xl px-4 py-3 text-stone-100 outline-none transition resize-none max-h-32 min-h-[48px]"></textarea>
+                    <!-- text-base (16px) предотвращает зум на iPhone -->
+                    <textarea id="chat-input" rows="1" placeholder="Сообщение..." class="flex-1 bg-stone-900 border border-stone-600 focus:border-chipmunk rounded-xl px-4 py-3 text-stone-100 text-base outline-none transition resize-none max-h-32 min-h-[48px]"></textarea>
                     <button type="submit" class="bg-chipmunk hover:bg-chipmunk-light text-white rounded-xl transition flex items-center justify-center w-12 h-12 shadow-md flex-shrink-0">
                         <i class="fas fa-paper-plane"></i>
                     </button>
@@ -135,54 +142,76 @@
             </div>
         </div>
 
-        <!-- ПАНЕЛЬ ВИДЕО (Поверх чата) -->
-        <div id="video-overlay" class="hidden absolute top-0 left-0 right-0 p-4 z-30 pointer-events-none flex justify-end">
-            <!-- Контейнер видеозвонка (можно таскать/изменять) -->
-            <div class="pointer-events-auto bg-stone-900 border border-stone-700 p-2 rounded-2xl shadow-2xl flex flex-col w-48 sm:w-64 transition-all" id="video-container">
+        <!-- ПАНЕЛЬ ЗВОНКА (Поверх чата) -->
+        <div id="video-overlay" class="hidden absolute inset-0 sm:inset-auto sm:top-4 sm:right-4 p-4 z-30 pointer-events-none flex items-center justify-center sm:justify-end bg-black/50 sm:bg-transparent backdrop-blur-sm sm:backdrop-blur-none">
+            <!-- Контейнер звонка -->
+            <div class="pointer-events-auto bg-stone-900 border border-stone-700 p-3 rounded-3xl shadow-2xl flex flex-col w-full max-w-sm sm:w-72 transition-all relative" id="call-container">
                 
-                <!-- Видео собеседника -->
-                <div class="relative w-full aspect-[3/4] bg-black rounded-xl overflow-hidden mb-2">
+                <div class="absolute top-4 left-4 z-40">
+                    <span id="call-type-badge" class="bg-black/60 text-white text-xs px-2 py-1 rounded-md backdrop-blur-md font-medium">Звонок</span>
+                </div>
+
+                <!-- Область Собеседника -->
+                <div class="relative w-full aspect-[3/4] bg-black rounded-2xl overflow-hidden mb-3 shadow-inner flex items-center justify-center">
+                    
+                    <!-- Заглушка для АУДИОЗВОНКА -->
+                    <div id="audio-only-remote" class="hidden flex flex-col items-center justify-center w-full h-full bg-stone-800 absolute inset-0 z-10">
+                        <div class="w-24 h-24 bg-chipmunk/20 rounded-full flex items-center justify-center mb-4 relative">
+                            <div class="absolute inset-0 bg-chipmunk/30 rounded-full animate-ping"></div>
+                            <div class="w-20 h-20 bg-chipmunk rounded-full flex items-center justify-center text-5xl shadow-lg z-10 relative">
+                                🐿️
+                            </div>
+                        </div>
+                        <span class="text-stone-300 font-medium">Собеседник на линии</span>
+                    </div>
+
+                    <!-- Видео собеседника -->
                     <video id="remote-video" autoplay playsinline class="w-full h-full object-cover"></video>
-                    <div id="remote-video-loader" class="absolute inset-0 flex flex-col justify-center items-center text-chipmunk">
-                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                        <span class="text-xs text-stone-300">Ожидание...</span>
+                    
+                    <!-- Лоадер ожидания -->
+                    <div id="remote-video-loader" class="absolute inset-0 flex flex-col justify-center items-center bg-stone-900/90 z-20">
+                        <i class="fas fa-spinner fa-spin text-3xl text-chipmunk mb-3"></i>
+                        <span class="text-sm text-stone-300">Соединение...</span>
                     </div>
                 </div>
 
-                <!-- Мое видео (маленькое) -->
-                <div class="relative w-full h-24 bg-black rounded-xl overflow-hidden mb-2 border border-stone-700">
+                <!-- Моя область (маленькая камера) -->
+                <div id="local-video-wrapper" class="relative w-full h-24 bg-black rounded-xl overflow-hidden mb-3 border border-stone-700">
                     <video id="local-video" autoplay playsinline muted class="w-full h-full object-cover"></video>
-                    <div class="absolute bottom-1 right-1 flex space-x-1">
-                        <button onclick="toggleMic()" id="btn-mic" class="bg-stone-800/80 p-1.5 rounded-md text-white hover:bg-stone-700 backdrop-blur-sm text-xs">
-                            <i class="fas fa-microphone"></i>
-                        </button>
-                        <button onclick="toggleVideo()" id="btn-video" class="bg-stone-800/80 p-1.5 rounded-md text-white hover:bg-stone-700 backdrop-blur-sm text-xs">
-                            <i class="fas fa-video"></i>
-                        </button>
-                    </div>
                 </div>
 
-                <!-- Кнопка сброса звонка -->
-                <button onclick="endVideoCall()" class="w-full bg-red-600 hover:bg-red-500 text-white py-2 rounded-xl text-sm font-semibold shadow-lg transition flex justify-center items-center">
-                    <i class="fas fa-phone-slash mr-2"></i> Завершить
-                </button>
+                <!-- Панель управления звонком -->
+                <div class="flex space-x-2">
+                    <button onclick="toggleMic()" id="btn-mic" class="flex-1 bg-stone-800 p-3 rounded-xl text-white hover:bg-stone-700 transition">
+                        <i class="fas fa-microphone text-lg"></i>
+                    </button>
+                    <button onclick="toggleVideo()" id="btn-video" class="flex-1 bg-stone-800 p-3 rounded-xl text-white hover:bg-stone-700 transition">
+                        <i class="fas fa-video text-lg"></i>
+                    </button>
+                    <button onclick="endCall()" class="flex-2 bg-red-600 hover:bg-red-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg transition w-full">
+                        <i class="fas fa-phone-slash"></i>
+                    </button>
+                </div>
             </div>
         </div>
 
         <!-- МОДАЛЬНОЕ ОКНО: Входящий звонок -->
         <div id="incoming-call-modal" class="hidden absolute inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-            <div class="bg-chipmunk-panel border border-chipmunk rounded-2xl p-6 shadow-2xl w-full max-w-sm text-center animate-bounce">
-                <div class="w-16 h-16 bg-chipmunk rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-lg shadow-chipmunk/50">
-                    <i class="fas fa-video text-white animate-pulse"></i>
+            <div class="bg-chipmunk-panel border border-chipmunk rounded-3xl p-6 sm:p-8 shadow-2xl w-full max-w-sm text-center animate-bounce">
+                <div class="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-lg shadow-chipmunk/50 relative">
+                    <div class="absolute inset-0 bg-chipmunk/50 rounded-full animate-ping"></div>
+                    <div id="incoming-call-icon" class="bg-chipmunk w-full h-full rounded-full flex items-center justify-center relative z-10 text-white">
+                        <i class="fas fa-phone-alt"></i>
+                    </div>
                 </div>
-                <h2 class="text-xl font-bold text-white mb-2">Входящий видеозвонок!</h2>
-                <p class="text-stone-400 text-sm mb-6">Собеседник хочет включить камеру.</p>
-                <div class="flex space-x-3">
-                    <button onclick="answerCall()" class="flex-1 bg-green-500 hover:bg-green-400 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-green-500/30">
+                <h2 id="incoming-call-title" class="text-xl sm:text-2xl font-bold text-white mb-2">Входящий звонок!</h2>
+                <p class="text-stone-400 text-sm mb-8">Вы сможете выключить микрофон во время разговора.</p>
+                <div class="flex space-x-4">
+                    <button onclick="answerCall()" class="flex-1 bg-green-500 hover:bg-green-400 text-white font-bold py-4 rounded-2xl transition shadow-lg shadow-green-500/30 text-lg">
                         <i class="fas fa-phone"></i> Принять
                     </button>
-                    <button onclick="rejectCall()" class="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-red-500/30">
-                        <i class="fas fa-times"></i> Сбросить
+                    <button onclick="rejectCall()" class="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-4 rounded-2xl transition shadow-lg shadow-red-500/30 text-lg">
+                        <i class="fas fa-times"></i> Сброс
                     </button>
                 </div>
             </div>
@@ -193,16 +222,20 @@
     <!-- Логика приложения -->
     <script>
         // --- ПЕРЕМЕННЫЕ СОСТОЯНИЯ ---
-        let peer = null;            // Экземпляр сети
-        let dataConnection = null;  // Соединение для текста (Чат)
-        let mediaConnection = null; // Соединение для видео
-        let localStream = null;     // Моя камера/микрофон
-        let incomingCallRef = null; // Ссылка на входящий звонок
+        let peer = null;            
+        let dataConnection = null;  
+        let mediaConnection = null; 
+        let localStream = null;     
+        let incomingCallRef = null; 
         
         let micEnabled = true;
         let videoEnabled = true;
+        let currentCallType = null; // 'audio' или 'video'
 
-        // --- УТИЛИТЫ UI ---
+        // Генерация 6-значного номера
+        const generateShortId = () => Math.floor(100000 + Math.random() * 900000).toString();
+        let myCustomId = generateShortId();
+
         const ui = {
             screenConnect: document.getElementById('screen-connect'),
             screenChat: document.getElementById('screen-chat'),
@@ -217,17 +250,15 @@
         function showToast(msg, type = 'info') {
             const toast = document.getElementById('toast');
             document.getElementById('toast-msg').innerText = msg;
-            
             const icon = document.getElementById('toast-icon');
             icon.className = type === 'error' ? 'fas fa-exclamation-triangle mr-2 text-red-400' : 'fas fa-info-circle mr-2 text-chipmunk-light';
-            
             toast.classList.remove('opacity-0', 'translate-y-[-20px]');
             setTimeout(() => toast.classList.add('opacity-0', 'translate-y-[-20px]'), 3000);
         }
 
         function setStatus(text, colorClass = 'text-stone-400', isPulse = false) {
-            const dot = isPulse ? `<span class="w-2 h-2 rounded-full bg-${colorClass.split('-')[1]}-500 mr-1 animate-pulse"></span>` : `<span class="w-2 h-2 rounded-full bg-${colorClass.split('-')[1]}-500 mr-1"></span>`;
-            ui.statusText.innerHTML = `${dot} <span class="${colorClass}">${text}</span>`;
+            const dot = isPulse ? `<span class="w-2 h-2 rounded-full bg-${colorClass.split('-')[1]}-500 mr-1 animate-pulse flex-shrink-0"></span>` : `<span class="w-2 h-2 rounded-full bg-${colorClass.split('-')[1]}-500 mr-1 flex-shrink-0"></span>`;
+            ui.statusText.innerHTML = `${dot} <span class="${colorClass} truncate">${text}</span>`;
         }
 
         function switchScreen(screen) {
@@ -242,13 +273,16 @@
             }
         }
 
-        // --- ИНИЦИАЛИЗАЦИЯ (Без камеры!) ---
+        // --- ИНИЦИАЛИЗАЦИЯ ---
         function initApp() {
-            peer = new Peer({
+            // Инициализация PeerJS с расширенными серверами для мобильных сетей
+            peer = new Peer(myCustomId, {
                 debug: 2,
                 config: {'iceServers': [
                     { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' }
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:global.stun.twilio.com:3478' }, // Дополнительный мощный сервер
+                    { urls: 'stun:stun.relay.metered.ca:80' }     // Запасной сервер
                 ]}
             });
 
@@ -257,29 +291,56 @@
                 setStatus('В сети', 'text-green-500', true);
             });
 
-            // Когда кто-то пишет НАМ первым (входящий чат)
+            // АВТО-ПЕРЕПОДКЛЮЧЕНИЕ: Если телефон свернул браузер или моргнул интернет
+            peer.on('disconnected', () => {
+                setStatus('Сбой сети, восстанавливаем...', 'text-yellow-500', true);
+                if (!peer.destroyed) {
+                    peer.reconnect();
+                }
+            });
+
             peer.on('connection', (conn) => {
                 if (dataConnection) {
-                    conn.close(); // Запрещаем 3-го лишнего
+                    conn.close();
                     return;
                 }
                 setupChatConnection(conn);
             });
 
-            // Когда кто-то звонит НАМ (входящее видео)
             peer.on('call', (call) => {
                 incomingCallRef = call;
+                currentCallType = call.metadata?.type || 'video';
+                
+                // Настройка окна входящего звонка в зависимости от типа
+                const title = document.getElementById('incoming-call-title');
+                const icon = document.getElementById('incoming-call-icon');
+                
+                if (currentCallType === 'audio') {
+                    title.innerText = 'Входящий аудиозвонок!';
+                    icon.innerHTML = '<i class="fas fa-phone-alt"></i>';
+                } else {
+                    title.innerText = 'Входящий видеозвонок!';
+                    icon.innerHTML = '<i class="fas fa-video"></i>';
+                }
+                
                 ui.incomingModal.classList.remove('hidden');
             });
 
             peer.on('error', (err) => {
                 console.error("PeerJS Ошибка:", err);
                 if (err.type === 'peer-unavailable') {
-                    showToast('Собеседник не найден. Проверьте ID.', 'error');
+                    showToast('Код не найден. Проверьте правильность.', 'error');
                     document.getElementById('btn-connect').innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Создать чат';
                     document.getElementById('btn-connect').disabled = false;
+                } else if (err.type === 'unavailable-id') {
+                    // Если случайный код вдруг занят (редкость), генерируем новый
+                    myCustomId = generateShortId();
+                    initApp(); 
+                } else if (err.type === 'network' || err.type === 'disconnected') {
+                    setStatus('Сеть оборвалась. Пытаемся вернуть...', 'text-yellow-500');
+                    if (!peer.destroyed) peer.reconnect();
                 } else {
-                    setStatus('Ошибка сети', 'text-red-500');
+                    setStatus('Ошибка сервера', 'text-red-500');
                 }
             });
         }
@@ -289,8 +350,8 @@
             const targetId = document.getElementById('target-id').value.trim();
             const myId = document.getElementById('my-id').value;
             
-            if (!targetId) return showToast('Введите ID собеседника', 'error');
-            if (targetId === myId) return showToast('Это ваш собственный ID!', 'error');
+            if (!targetId || targetId.length < 3) return showToast('Введите верный код друга', 'error');
+            if (targetId === myId) return showToast('Это ваш собственный код!', 'error');
 
             const btn = document.getElementById('btn-connect');
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Подключение...';
@@ -307,7 +368,6 @@
             dataConnection = conn;
             
             dataConnection.on('data', (data) => {
-                // Получили сообщение
                 renderMessage(data.text, 'them');
             });
 
@@ -316,13 +376,12 @@
                 disconnectChat();
             });
 
-            // Успешное подключение - меняем экран
             setStatus('Чат активен', 'text-chipmunk-light');
             switchScreen('chat');
             ui.chatHistory.innerHTML = `
                 <div class="flex justify-center my-4">
-                    <span class="bg-stone-800 text-stone-400 text-xs px-3 py-1 rounded-full border border-stone-700 shadow-sm">
-                        Чат с ${conn.peer.substring(0, 5)}... создан 🔒
+                    <span class="bg-stone-800 text-stone-400 text-[10px] sm:text-xs px-3 py-1 rounded-full border border-stone-700 shadow-sm text-center">
+                        Чат с пользователем ${conn.peer} создан 🔒
                     </span>
                 </div>
             `;
@@ -336,14 +395,11 @@
             const text = ui.chatInput.value.trim();
             if (!text) return;
 
-            // Отправляем текст
             dataConnection.send({ type: 'text', text: text });
-            
-            // Рисуем у себя
             renderMessage(text, 'me');
             
             ui.chatInput.value = '';
-            ui.chatInput.style.height = 'auto'; // Сброс высоты
+            ui.chatInput.style.height = 'auto';
         }
 
         function renderMessage(text, sender) {
@@ -353,16 +409,14 @@
             msgDiv.className = `flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'}`;
             
             const bubble = document.createElement('div');
-            bubble.className = `max-w-[80%] rounded-2xl px-4 py-2 shadow-md ${
+            bubble.className = `max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-2 sm:py-3 shadow-md break-words ${
                 isMe 
                 ? 'bg-chipmunk text-white rounded-tr-sm' 
                 : 'bg-stone-800 text-stone-100 border border-stone-700 rounded-tl-sm'
             }`;
             
-            // Защита от XSS
             bubble.textContent = text; 
             
-            // Время
             const timeSpan = document.createElement('div');
             timeSpan.className = `text-[10px] mt-1 ${isMe ? 'text-chipmunk-dark text-right' : 'text-stone-500 text-left'}`;
             const d = new Date();
@@ -372,13 +426,12 @@
             msgDiv.appendChild(bubble);
             ui.chatHistory.appendChild(msgDiv);
             
-            // Прокрутка вниз
             ui.chatHistory.scrollTop = ui.chatHistory.scrollHeight;
         }
 
         function disconnectChat() {
             if (dataConnection) dataConnection.close();
-            if (mediaConnection) endVideoCall();
+            if (mediaConnection) endCallLocally();
             dataConnection = null;
             
             document.getElementById('target-id').value = '';
@@ -389,47 +442,74 @@
             switchScreen('connect');
         }
 
-        // --- ЛОГИКА ВИДЕОЗВОНКОВ (Только при нажатии) ---
-        async function getCameraAccess() {
+        // --- ЛОГИКА ЗВОНКОВ (АУДИО И ВИДЕО) ---
+        async function getMediaAccess(type) {
             try {
-                if (!localStream) {
-                    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                    document.getElementById('local-video').srcObject = localStream;
+                // Если уже есть поток, отключаем его перед сменой режима
+                if (localStream) {
+                    localStream.getTracks().forEach(t => t.stop());
                 }
+                
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: type === 'video', 
+                    audio: true 
+                });
+                
+                document.getElementById('local-video').srcObject = localStream;
+                micEnabled = true;
+                videoEnabled = type === 'video';
+                updateMediaButtons();
+                
                 return true;
             } catch (err) {
-                console.error("Camera error:", err);
-                showToast('Нет доступа к камере или микрофону!', 'error');
+                console.error("Media error:", err);
+                showToast('Разрешите доступ к микрофону/камере в браузере!', 'error');
                 return false;
             }
         }
 
-        async function startVideoCall() {
-            if (!dataConnection) return;
-            const targetId = dataConnection.peer;
-
-            // Запрашиваем камеру ТОЛЬКО сейчас
-            const hasCamera = await getCameraAccess();
-            if (!hasCamera) return;
-
+        function setCallUI(type) {
+            const isAudio = type === 'audio';
+            document.getElementById('call-type-badge').innerHTML = isAudio ? '<i class="fas fa-phone-alt text-green-400 mr-1"></i> Аудиозвонок' : '<i class="fas fa-video text-chipmunk-light mr-1"></i> Видеозвонок';
+            
+            // Настройка отображения блоков
+            document.getElementById('audio-only-remote').classList.toggle('hidden', !isAudio);
+            document.getElementById('remote-video').classList.toggle('hidden', isAudio);
+            
+            // Скрываем свое видео окно и кнопку видео, если это чисто аудиозвонок
+            document.getElementById('local-video-wrapper').classList.toggle('hidden', isAudio);
+            document.getElementById('btn-video').classList.toggle('hidden', isAudio);
+            
             ui.videoOverlay.classList.remove('hidden');
             document.getElementById('remote-video-loader').classList.remove('hidden');
+        }
 
-            const call = peer.call(targetId, localStream);
+        async function startCall(type) {
+            if (!dataConnection) return;
+            const targetId = dataConnection.peer;
+            currentCallType = type;
+
+            const hasMedia = await getMediaAccess(type);
+            if (!hasMedia) return;
+
+            setCallUI(type);
+
+            // Передаем metadata, чтобы друг знал тип звонка
+            const call = peer.call(targetId, localStream, { metadata: { type: type } });
             setupMediaConnection(call);
         }
 
         async function answerCall() {
             ui.incomingModal.classList.add('hidden');
             
-            const hasCamera = await getCameraAccess();
-            if (!hasCamera) {
+            const hasMedia = await getMediaAccess(currentCallType);
+            if (!hasMedia) {
                 if (incomingCallRef) incomingCallRef.close();
                 return;
             }
 
             if (incomingCallRef) {
-                ui.videoOverlay.classList.remove('hidden');
+                setCallUI(currentCallType);
                 incomingCallRef.answer(localStream);
                 setupMediaConnection(incomingCallRef);
                 incomingCallRef = null;
@@ -450,76 +530,86 @@
             call.on('stream', (remoteStream) => {
                 document.getElementById('remote-video').srcObject = remoteStream;
                 document.getElementById('remote-video-loader').classList.add('hidden');
+                
+                // Для мобильных устройств (iOS Safari) может потребоваться явный play
+                const videoEl = document.getElementById('remote-video');
+                videoEl.play().catch(e => console.log("Play error:", e));
             });
 
-            call.on('close', () => {
-                endVideoCallLocally();
-            });
+            call.on('close', () => endCallLocally());
             call.on('error', () => {
-                showToast('Ошибка видеосвязи', 'error');
-                endVideoCallLocally();
+                showToast('Ошибка связи', 'error');
+                endCallLocally();
             });
         }
 
-        function endVideoCall() {
+        function endCall() {
             if (mediaConnection) {
                 mediaConnection.close();
             }
-            endVideoCallLocally();
+            endCallLocally();
         }
 
-        function endVideoCallLocally() {
+        function endCallLocally() {
             mediaConnection = null;
             document.getElementById('remote-video').srcObject = null;
             ui.videoOverlay.classList.add('hidden');
             
-            // Если хотим выключать камеру после звонка:
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
                 localStream = null;
                 document.getElementById('local-video').srcObject = null;
             }
+            currentCallType = null;
         }
 
         // --- УПРАВЛЕНИЕ МЕДИА ---
+        function updateMediaButtons() {
+            const btnMic = document.getElementById('btn-mic');
+            btnMic.className = `flex-1 p-3 rounded-xl text-white transition ${micEnabled ? 'bg-stone-800 hover:bg-stone-700' : 'bg-red-500 hover:bg-red-600'}`;
+            btnMic.innerHTML = `<i class="fas ${micEnabled ? 'fa-microphone' : 'fa-microphone-slash'} text-lg"></i>`;
+
+            const btnVideo = document.getElementById('btn-video');
+            btnVideo.className = `flex-1 p-3 rounded-xl text-white transition ${videoEnabled ? 'bg-stone-800 hover:bg-stone-700' : 'bg-red-500 hover:bg-red-600'}`;
+            btnVideo.innerHTML = `<i class="fas ${videoEnabled ? 'fa-video' : 'fa-video-slash'} text-lg"></i>`;
+        }
+
         function toggleMic() {
             if(!localStream) return;
             micEnabled = !micEnabled;
+            // Ищем аудиотреки и переключаем
             localStream.getAudioTracks().forEach(track => track.enabled = micEnabled);
-            const btn = document.getElementById('btn-mic');
-            btn.className = `p-1.5 rounded-md text-white backdrop-blur-sm text-xs ${micEnabled ? 'bg-stone-800/80 hover:bg-stone-700' : 'bg-red-500/80 hover:bg-red-500'}`;
-            btn.innerHTML = `<i class="fas ${micEnabled ? 'fa-microphone' : 'fa-microphone-slash'}"></i>`;
+            updateMediaButtons();
         }
 
         function toggleVideo() {
-            if(!localStream) return;
+            if(!localStream || currentCallType === 'audio') return;
             videoEnabled = !videoEnabled;
+            // Ищем видеотреки и переключаем
             localStream.getVideoTracks().forEach(track => track.enabled = videoEnabled);
-            const btn = document.getElementById('btn-video');
-            btn.className = `p-1.5 rounded-md text-white backdrop-blur-sm text-xs ${videoEnabled ? 'bg-stone-800/80 hover:bg-stone-700' : 'bg-red-500/80 hover:bg-red-500'}`;
-            btn.innerHTML = `<i class="fas ${videoEnabled ? 'fa-video' : 'fa-video-slash'}"></i>`;
+            updateMediaButtons();
         }
 
         function copyId() {
             const id = document.getElementById('my-id').value;
             if(id === 'Генерация...') return;
             navigator.clipboard.writeText(id).then(() => {
-                showToast('ID скопирован!');
+                showToast('Код скопирован!');
             }).catch(() => {
                 const input = document.getElementById('my-id');
                 input.select();
                 document.execCommand('copy');
-                showToast('ID скопирован!');
+                showToast('Код скопирован!');
             });
         }
 
-        // Автоматическое изменение высоты поля ввода
+        // Автоматическое изменение высоты поля ввода для текста
         ui.chatInput.addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = (this.scrollHeight) + 'px';
         });
         
-        // Отправка по Enter (без Shift)
+        // Отправка по Enter (без Shift) - работает и на ПК и на смартфонах
         ui.chatInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
